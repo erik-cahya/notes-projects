@@ -1,0 +1,4 @@
+# Abaikan semua file lampiran yang diunggah, kecuali file .gitignore dan index.php
+*
+!.gitignore
+!index.php

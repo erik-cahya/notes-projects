@@ -1,0 +1,4 @@
+# Abaikan semua file catatan JSON, kecuali file .gitignore dan index.php
+*.json
+!.gitignore
+!index.php

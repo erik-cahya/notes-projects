@@ -1,0 +1,12 @@
+# Proteksi direktori data agar tidak diakses langsung dari browser
+RewriteEngine On
+RewriteRule ^data/ - [F,L]
+
+# Sembunyikan daftar direktori
+Options -Indexes
+
+# Blokir akses langsung ke file konfigurasi dan helper
+<FilesMatch "^\.|\.(json|log|md)$">
+    Order allow,deny
+    Deny from all
+</FilesMatch>
