@@ -5,8 +5,28 @@ RewriteRule ^data/ - [F,L]
 # Sembunyikan daftar direktori
 Options -Indexes
 
+# Kompresi gzip/deflate untuk asset statis & halaman dinamis yang mendukung
+<IfModule mod_deflate.c>
+    AddOutputFilterByType DEFLATE text/html text/plain text/xml text/css application/javascript application/json application/xml
+</IfModule>
+
+# Header cache untuk asset statis agar tidak diunduh berulang kali
+<IfModule mod_expires.c>
+    ExpiresActive On
+    ExpiresByType text/css "access plus 1 month"
+    ExpiresByType application/javascript "access plus 1 month"
+    ExpiresByType image/png "access plus 1 month"
+    ExpiresByType image/jpeg "access plus 1 month"
+    ExpiresByType image/svg+xml "access plus 1 month"
+</IfModule>
+
 # Blokir akses langsung ke file konfigurasi dan helper
 <FilesMatch "^\.|\.(json|log|md)$">
-    Order allow,deny
-    Deny from all
+    <IfModule authz_core_module>
+        Require all denied
+    </IfModule>
+    <IfModule !authz_core_module>
+        Order allow,deny
+        Deny from all
+    </IfModule>
 </FilesMatch>

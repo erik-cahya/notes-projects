@@ -1,33 +1,119 @@
 <?php
 require_once __DIR__ . '/config.php';
 
-/**
- * Membaca semua catatan dari folder NOTES_DIR.
- * Mengembalikan array asosiatif [id => data].
- */
-function getNotes(): array
-{
-    $notes = [];
-    $files = glob(NOTES_DIR . '/*.json');
+if (!defined('INDEX_FILE')) {
+    define('INDEX_FILE', NOTES_DIR . '/index.json');
+}
+if (!defined('NOTES_PER_PAGE')) {
+    define('NOTES_PER_PAGE', 12);
+}
 
-    if ($files === false) {
-        return $notes;
+/**
+ * Membaca seluruh metadata dari file index.
+ */
+function getNoteIndex(): array
+{
+    if (!file_exists(INDEX_FILE)) {
+        return [];
     }
 
-    // Urutkan berdasarkan waktu terbaru
-    usort($files, function ($a, $b) {
-        return filemtime($b) <=> filemtime($a);
-    });
+    $content = file_get_contents(INDEX_FILE);
+    if ($content === false || $content === '') {
+        return [];
+    }
+
+    $index = json_decode($content, true);
+    return is_array($index) ? $index : [];
+}
+
+/**
+ * Menyimpan metadata ke file index.
+ */
+function saveNoteIndex(array $index): void
+{
+    file_put_contents(INDEX_FILE, json_encode($index), LOCK_EX);
+}
+
+/**
+ * Membangun ulang index dari file JSON catatan.
+ * Berguna saat sinkronisasi atau pertama kali.
+ */
+function rebuildNoteIndex(): array
+{
+    $index = [];
+    $files = glob(NOTES_DIR . '/*.json');
+    if ($files === false) {
+        return $index;
+    }
 
     foreach ($files as $file) {
-        $id = basename($file, '.json');
-        $data = readNote($id);
-        if ($data !== null) {
-            $notes[$id] = $data;
+        if (basename($file) === 'index.json') {
+            continue;
         }
+
+        $content = file_get_contents($file);
+        if ($content === false) {
+            continue;
+        }
+
+        $data = json_decode($content, true);
+        if (!is_array($data) || empty($data['id'])) {
+            continue;
+        }
+
+        $index[$data['id']] = [
+            'id' => $data['id'],
+            'title' => $data['title'] ?? '',
+        'created_at' => $data['created_at'] ?? date('Y-m-d H:i:s'),
+        'updated_at' => $data['updated_at'] ?? $data['created_at'] ?? date('Y-m-d H:i:s'),
+        'has_attachment' => !empty($data['file']['stored_name']),
+        'file_size' => $data['file']['size'] ?? 0,
+        'excerpt' => makeExcerpt($data['content'] ?? '', 120),
+        ];
     }
 
-    return $notes;
+    // Urutkan berdasarkan created_at terbaru
+    uasort($index, function ($a, $b) {
+        return strcmp($b['created_at'], $a['created_at']);
+    });
+
+    saveNoteIndex($index);
+    return $index;
+}
+
+/**
+ * Memastikan index tersedia dan valid.
+ */
+function ensureNoteIndex(): array
+{
+    $index = getNoteIndex();
+    if (empty($index)) {
+        $index = rebuildNoteIndex();
+    }
+    return $index;
+}
+
+/**
+ * Mendapatkan daftar catatan dengan paginasi.
+ * Mengembalikan [items, total, totalPages, page, perPage].
+ */
+function getNotesPaginated(int $page = 1, int $perPage = NOTES_PER_PAGE): array
+{
+    $index = ensureNoteIndex();
+    $total = count($index);
+    $totalPages = max(1, (int) ceil($total / $perPage));
+    $page = max(1, min($page, $totalPages));
+    $offset = ($page - 1) * $perPage;
+
+    $items = array_slice($index, $offset, $perPage, true);
+
+    return [
+        'items' => $items,
+        'total' => $total,
+        'totalPages' => $totalPages,
+        'page' => $page,
+        'perPage' => $perPage,
+    ];
 }
 
 /**
@@ -54,7 +140,7 @@ function readNote(string $id): ?array
 }
 
 /**
- * Menyimpan catatan baru ke file JSON.
+ * Menyimpan catatan baru ke file JSON dan memperbarui index.
  */
 function saveNote(string $title, string $content, array $fileInfo = []): string
 {
@@ -70,7 +156,24 @@ function saveNote(string $title, string $content, array $fileInfo = []): string
         'file' => $fileInfo,
     ];
 
-    file_put_contents($file, json_encode($data, JSON_PRETTY_PRINT), LOCK_EX);
+    file_put_contents($file, json_encode($data), LOCK_EX);
+
+    // Update index ringan
+    $index = ensureNoteIndex();
+    $index[$id] = [
+        'id' => $id,
+        'title' => $data['title'],
+        'created_at' => $data['created_at'],
+        'updated_at' => $data['updated_at'],
+        'has_attachment' => !empty($fileInfo['stored_name']),
+        'file_size' => $fileInfo['size'] ?? 0,
+        'excerpt' => makeExcerpt($data['content'], 120),
+    ];
+    uasort($index, function ($a, $b) {
+        return strcmp($b['created_at'], $a['created_at']);
+    });
+    saveNoteIndex($index);
+
     return $id;
 }
 
@@ -93,11 +196,19 @@ function deleteNote(string $id): bool
     }
 
     $file = NOTES_DIR . '/' . sanitizeId($id) . '.json';
+    $deleted = false;
     if (file_exists($file)) {
-        return @unlink($file);
+        $deleted = @unlink($file);
     }
 
-    return false;
+    // Hapus dari index
+    $index = getNoteIndex();
+    if (isset($index[$id])) {
+        unset($index[$id]);
+        saveNoteIndex($index);
+    }
+
+    return $deleted;
 }
 
 /**
@@ -113,7 +224,6 @@ function handleUpload(array $uploadedFile): array
         'error' => '',
     ];
 
-    // Jika tidak ada file yang diunggah atau error upload (kecuali UPLOAD_ERR_NO_FILE)
     if (!isset($uploadedFile['tmp_name']) || $uploadedFile['error'] === UPLOAD_ERR_NO_FILE) {
         return $result;
     }
@@ -123,13 +233,11 @@ function handleUpload(array $uploadedFile): array
         return $result;
     }
 
-    // Validasi ukuran file
     if ($uploadedFile['size'] > MAX_UPLOAD_SIZE) {
         $result['error'] = 'Ukuran file melebihi batas maksimal ' . formatBytes(MAX_UPLOAD_SIZE) . '.';
         return $result;
     }
 
-    // Validasi tipe file (izinkan sebagian besar tipe, kecuali executable berbahaya)
     $blockedExtensions = ['php', 'php3', 'php4', 'php5', 'phtml', 'exe', 'bat', 'sh', 'cmd', 'com', 'scr'];
     $originalName = basename($uploadedFile['name']);
     $extension = strtolower(pathinfo($originalName, PATHINFO_EXTENSION));
@@ -139,7 +247,6 @@ function handleUpload(array $uploadedFile): array
         return $result;
     }
 
-    // Simpan file dengan nama acak agar tidak bentrok dan tidak dapat diakses langsung
     $storedName = generateId() . '_' . preg_replace('/[^a-zA-Z0-9._-]/', '_', $originalName);
     $destination = UPLOADS_DIR . '/' . $storedName;
 
@@ -158,6 +265,7 @@ function handleUpload(array $uploadedFile): array
 
 /**
  * Mengunduh file lampiran dengan aman.
+ * Menggunakan chunked read agar hemat memori untuk file besar.
  */
 function downloadFile(string $id): void
 {
@@ -179,13 +287,51 @@ function downloadFile(string $id): void
     $mimeType = $note['file']['mime_type'] ?: 'application/octet-stream';
     $size = filesize($filePath);
 
+    // Bersihkan buffer output
+    if (ob_get_level()) {
+        ob_end_clean();
+    }
+
     header('Content-Type: ' . $mimeType);
     header('Content-Disposition: attachment; filename="' . $originalName . '"');
     header('Content-Length: ' . $size);
-    header('Cache-Control: no-cache, must-revalidate');
+    header('Cache-Control: private, max-age=0');
+    header('Expires: -1');
+    header('Pragma: no-cache');
 
-    readfile($filePath);
+    // Chunked streaming
+    $handle = fopen($filePath, 'rb');
+    if (!$handle) {
+        header('HTTP/1.1 500 Internal Server Error');
+        exit('Gagal membaca file.');
+    }
+
+    $chunkSize = 1024 * 1024; // 1 MB per chunk
+    while (!feof($handle)) {
+        echo fread($handle, $chunkSize);
+        flush();
+    }
+    fclose($handle);
     exit;
+}
+
+/**
+ * Membuat cuplikan teks untuk ditampilkan di daftar.
+ */
+function makeExcerpt(?string $text, int $maxLength = 120): string
+{
+    if ($text === null) {
+        return '';
+    }
+
+    $text = str_replace(["\r\n", "\r", "\n"], ' ', $text);
+    $text = trim($text);
+
+    if (mb_strlen($text, 'UTF-8') <= $maxLength) {
+        return $text;
+    }
+
+    return mb_substr($text, 0, $maxLength, 'UTF-8') . '…';
 }
 
 /**

@@ -432,6 +432,21 @@ textarea {
     font-size: 0.95rem;
 }
 
+/* Pagination */
+.pagination {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    margin-top: 32px;
+    flex-wrap: wrap;
+}
+
+.page-info {
+    color: var(--text-muted);
+    font-size: 0.9rem;
+}
+
 /* Responsive */
 @media (max-width: 600px) {
     .topbar-inner {

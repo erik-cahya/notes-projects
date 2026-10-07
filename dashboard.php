@@ -3,7 +3,9 @@ require_once __DIR__ . '/includes/auth.php';
 require_once __DIR__ . '/includes/functions.php';
 requireLogin();
 
-$notes = getNotes();
+$page = isset($_GET['page']) ? max(1, (int) $_GET['page']) : 1;
+$notesData = getNotesPaginated($page);
+$notes = $notesData['items'];
 
 // Handle delete
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_id'])) {
@@ -20,7 +22,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_id'])) {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Dashboard | Note Repo</title>
-    <link rel="stylesheet" href="<?= BASE_URL ?>/assets/style.css">
+    <link rel="stylesheet" href="<?= BASE_URL ?>/assets/style.min.css">
 </head>
 <body>
     <header class="topbar">
@@ -58,12 +60,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_id'])) {
                             <h2 class="note-title"><?= e($note['title'] ?: '(Tanpa judul)') ?></h2>
                             <p class="note-meta">
                                 <?= e(date('d M Y H:i', strtotime($note['created_at']))) ?>
-                                <?php if (!empty($note['file']['stored_name'])): ?>
-                                    <span class="badge">📎 <?= e(formatBytes($note['file']['size'])) ?></span>
+                                <?php if (!empty($note['has_attachment'])): ?>
+                                    <span class="badge">📎 <?= e(formatBytes($note['file_size'])) ?></span>
                                 <?php endif; ?>
                             </p>
                             <p class="note-excerpt">
-                                <?= e(strlen($note['content']) > 120 ? substr($note['content'], 0, 120) . '…' : $note['content']) ?>
+                                <?= e($note['excerpt']) ?>
                             </p>
                         </a>
                         <form method="POST" action="" class="note-actions" onsubmit="return confirm('Yakin ingin menghapus catatan ini?');">
@@ -73,6 +75,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_id'])) {
                     </article>
                 <?php endforeach; ?>
             </div>
+
+            <?php if ($notesData['totalPages'] > 1): ?>
+                <nav class="pagination" aria-label="Navigasi halaman">
+                    <?php if ($notesData['page'] > 1): ?>
+                        <a href="<?= BASE_URL ?>/dashboard.php?page=<?= $notesData['page'] - 1 ?>" class="btn btn-outline btn-sm">← Sebelumnya</a>
+                    <?php endif; ?>
+
+                    <span class="page-info">Halaman <?= $notesData['page'] ?> dari <?= $notesData['totalPages'] ?></span>
+
+                    <?php if ($notesData['page'] < $notesData['totalPages']): ?>
+                        <a href="<?= BASE_URL ?>/dashboard.php?page=<?= $notesData['page'] + 1 ?>" class="btn btn-outline btn-sm">Berikutnya →</a>
+                    <?php endif; ?>
+                </nav>
+            <?php endif; ?>
         <?php endif; ?>
     </main>
 </body>

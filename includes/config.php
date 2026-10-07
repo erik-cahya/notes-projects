@@ -1,12 +1,24 @@
 <?php
+
 /**
  * Konfigurasi aplikasi Note/Repository
  * Tanpa database - semua data disimpan di file JSON lokal.
  */
 
-// Memulai session
+// Memulai session dengan batas cookie yang wajar
 if (session_status() === PHP_SESSION_NONE) {
+    // Batasi lifetime cookie session agar tidak bertumpuk di perangkat
+    $cookieParams = session_get_cookie_params();
+    session_set_cookie_params([
+        'lifetime' => 0,
+        'path' => $cookieParams['path'],
+        'domain' => $cookieParams['domain'],
+        'secure' => false,
+        'httponly' => true,
+        'samesite' => 'Strict',
+    ]);
     session_start();
+    session_regenerate_id(true);
 }
 
 // Wajib menggunakan absolute path agar aman
