@@ -46,8 +46,11 @@ if ($note === null) {
                     &nbsp;• Diperbarui: <?= e(date('d M Y H:i', strtotime($note['updated_at']))) ?>
                 <?php endif; ?>
             </p>
+            <div class="note-actions">
+                <a href="<?= BASE_URL ?>/edit.php?id=<?= e($id) ?>" class="btn btn-outline btn-sm">✏️ Edit</a>
+            </div>
 
-            <div class="note-content">
+            <div class="note-content note-content-plain">
                 <pre><code><?= e($note['content']) ?></code></pre>
             </div>
 

@@ -28,7 +28,7 @@ if (!defined('BASE_DIR')) {
 
 // Password login tetap
 if (!defined('APP_PASSWORD')) {
-    define('APP_PASSWORD', 'mankcodet');
+    define('APP_PASSWORD', 'password123');
 }
 
 // Batas maksimal upload file (10 MB)

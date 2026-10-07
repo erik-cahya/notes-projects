@@ -68,10 +68,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_id'])) {
                                 <?= e($note['excerpt']) ?>
                             </p>
                         </a>
-                        <form method="POST" action="" class="note-actions" onsubmit="return confirm('Yakin ingin menghapus catatan ini?');">
-                            <input type="hidden" name="delete_id" value="<?= e($id) ?>">
-                            <button type="submit" class="btn btn-danger btn-sm" title="Hapus">🗑 Hapus</button>
-                        </form>
+                        <div class="note-actions">
+                            <a href="<?= BASE_URL ?>/edit.php?id=<?= e($id) ?>" class="btn btn-outline btn-sm" title="Edit">✏️ Edit</a>
+                            <form method="POST" action="" class="inline-form" onsubmit="return confirm('Yakin ingin menghapus catatan ini?');">
+                                <input type="hidden" name="delete_id" value="<?= e($id) ?>">
+                                <button type="submit" class="btn btn-danger btn-sm" title="Hapus">🗑 Hapus</button>
+                            </form>
+                        </div>
                     </article>
                 <?php endforeach; ?>
             </div>

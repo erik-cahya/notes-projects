@@ -178,6 +178,58 @@ function saveNote(string $title, string $content, array $fileInfo = []): string
 }
 
 /**
+ * Memperbarui catatan yang sudah ada, termasuk judul, isi, dan lampiran.
+ * Jika ada file baru, file lama akan dihapus.
+ */
+function updateNote(string $id, string $title, string $content, array $fileInfo = [], bool $removeAttachment = false): bool
+{
+    $note = readNote($id);
+    if ($note === null) {
+        return false;
+    }
+
+    // Hapus lampiran lama jika ada pengganti atau diminta hapus
+    if (!empty($note['file']['stored_name']) && ($removeAttachment || !empty($fileInfo['stored_name']))) {
+        $oldAttachment = UPLOADS_DIR . '/' . $note['file']['stored_name'];
+        if (file_exists($oldAttachment)) {
+            @unlink($oldAttachment);
+        }
+        $note['file'] = [];
+    }
+
+    if (!empty($fileInfo['stored_name'])) {
+        $note['file'] = $fileInfo;
+    } elseif ($removeAttachment) {
+        $note['file'] = [];
+    }
+
+    $note['title'] = trim($title);
+    $note['content'] = $content;
+    $note['updated_at'] = date('Y-m-d H:i:s');
+
+    $file = NOTES_DIR . '/' . sanitizeId($id) . '.json';
+    file_put_contents($file, json_encode($note), LOCK_EX);
+
+    // Update index ringan
+    $index = getNoteIndex();
+    $index[$id] = [
+        'id' => $id,
+        'title' => $note['title'],
+        'created_at' => $note['created_at'],
+        'updated_at' => $note['updated_at'],
+        'has_attachment' => !empty($note['file']['stored_name']),
+        'file_size' => $note['file']['size'] ?? 0,
+        'excerpt' => makeExcerpt($note['content'], 120),
+    ];
+    uasort($index, function ($a, $b) {
+        return strcmp($b['created_at'], $a['created_at']);
+    });
+    saveNoteIndex($index);
+
+    return true;
+}
+
+/**
  * Menghapus catatan beserta file lampirannya (jika ada).
  */
 function deleteNote(string $id): bool
@@ -372,4 +424,79 @@ function formatBytes(int $bytes, int $precision = 2): string
 function e(string $text): string
 {
     return htmlspecialchars($text, ENT_QUOTES, 'UTF-8');
+}
+
+/**
+ * Mengubah sintaks markdown sederhana ke HTML:
+ * - **bold** atau __bold__
+ * - ```code blocks``` dengan bahasa (opsional)
+ * - `inline code`
+ * - --- atau *** divider
+ * - baris baru menjadi <br> atau paragraf
+ */
+function formatNoteContent(string $text): string
+{
+    $text = e($text);
+
+    // Code block: ```lang\ncode\n```
+    $text = preg_replace_callback(
+        '/```(\w+)?\n(.*?)\n```/s',
+        function ($matches) {
+            $lang = $matches[1] ?? 'plaintext';
+            $code = trim($matches[2]);
+            $class = 'hljs language-' . e(strtolower($lang));
+            return "<pre><code class=\"" . $class . "\">" . $code . "</code></pre>";
+        },
+        $text
+    );
+
+    // Inline code: `code`
+    $text = preg_replace_callback(
+        '/`([^`]+)`/',
+        function ($matches) {
+            return '<code>' . $matches[1] . '</code>';
+        },
+        $text
+    );
+
+    // Bold: **text** atau __text__
+    $text = preg_replace('/\*\*(.+?)\*\*/s', '<strong>$1</strong>', $text);
+    $text = preg_replace('/__(.+?)__/s', '<strong>$1</strong>', $text);
+
+    // Divider: --- atau *** atau ___ di baris sendiri
+    $text = preg_replace('/^[\-*_]{3,}\s*$/m', '<hr>', $text);
+
+    // List sederhana dengan - atau *
+    $text = preg_replace_callback(
+        '/(?:^[\-\*] .+$(?:\n|$))/m',
+        function ($matches) {
+            $items = array_filter(explode("\n", trim($matches[0])));
+            $html = '<ul>';
+            foreach ($items as $item) {
+                $item = preg_replace('/^[\-\*]\s+/', '', $item);
+                $html .= '<li>' . $item . '</li>';
+            }
+            $html .= '</ul>';
+            return $html;
+        },
+        $text
+    );
+
+    // Paragraphs: pisahkan blok yang bukan tag
+    $text = preg_replace_callback(
+        '/((?:[^<\n].*\n?)+)/',
+        function ($matches) {
+            $block = trim($matches[1]);
+            if ($block === '') {
+                return '';
+            }
+            return '<p>' . $block . '</p>' . "\n";
+        },
+        $text
+    );
+
+    // Bersihkan multiple <br> atau paragraf kosong
+    $text = preg_replace('/<p><\/p>/', '', $text);
+
+    return trim($text);
 }
